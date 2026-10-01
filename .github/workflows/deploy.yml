@@ -1,3 +1,57 @@
+name: Test Small File Upload
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install SSH client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-client
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          set -e
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+
+          echo "SSH key configured."
+
+      - name: Test SSH connection
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          set -e
+
+          ssh \
+            -F /dev/null \
+            -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o IdentityAgent=none \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" \
+            "echo 'SSH connection successful'"
+
       - name: Test small file upload
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
