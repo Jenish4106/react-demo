@@ -131,6 +131,9 @@ jobs:
             -o IdentityAgent=none \
             -o StrictHostKeyChecking=yes \
             -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
             "$SERVER_USER@$SERVER_HOST" \
             "mkdir -p /home/subofficeuser/public_html/demo && ls -ld /home/subofficeuser/public_html/demo"
 
@@ -140,10 +143,16 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
+          echo "======================================"
           echo "Deploying React build to demo server..."
+          echo "======================================"
 
-          rsync -avz \
-            -e "ssh -F /dev/null -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
+          rsync \
+            -av \
+            --info=progress2 \
+            --partial \
+            --timeout=60 \
+            -e "ssh -F /dev/null -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
             dist/ \
             "$SERVER_USER@$SERVER_HOST:/home/subofficeuser/public_html/demo/"
 
@@ -162,6 +171,7 @@ jobs:
             -o IdentityAgent=none \
             -o StrictHostKeyChecking=yes \
             -o BatchMode=yes \
+            -o ConnectTimeout=30 \
             "$SERVER_USER@$SERVER_HOST" \
             "ls -la /home/subofficeuser/public_html/demo/"
 
