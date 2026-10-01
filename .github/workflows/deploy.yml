@@ -182,8 +182,6 @@ jobs:
             --info=progress2 \
             --partial \
             --timeout=600 \
-            --contimeout=30 \
-            --whole-file \
             -e "ssh -F /dev/null -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes" \
             dist/ \
             "$SERVER_USER@$SERVER_HOST:/home/subofficeuser/public_html/demo/"
