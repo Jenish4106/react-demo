@@ -11,7 +11,7 @@ jobs:
 
     steps:
 
-      # 1. Checkout latest code
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v5
 
@@ -33,13 +33,8 @@ jobs:
       # 5. Verify build output
       - name: Verify build output
         run: |
-          echo "======================================"
-          echo "Checking React build output..."
-          echo "======================================"
-
+          echo "Build output:"
           ls -lah dist/
-
-          echo ""
           echo "Build size:"
           du -sh dist/
 
@@ -52,7 +47,6 @@ jobs:
           echo "SSH version:"
           ssh -V
 
-          echo ""
           echo "Rsync version:"
           rsync --version | head -n 1
 
@@ -60,26 +54,13 @@ jobs:
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           set -e
 
-          echo "======================================"
-          echo "Checking SSH configuration..."
-          echo "======================================"
-
-          if [ -z "$SERVER_HOST" ]; then
-            echo "ERROR: SERVER_HOST secret is empty or not configured."
-            exit 1
-          fi
-
           if [ -z "$SSH_PRIVATE_KEY" ]; then
-            echo "ERROR: SERVER_SSH_KEY secret is empty or not configured."
+            echo "ERROR: SERVER_SSH_KEY is empty."
             exit 1
           fi
-
-          echo "SERVER_HOST is configured."
-          echo "SERVER_SSH_KEY is configured."
 
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
@@ -87,28 +68,7 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
           chmod 600 "$HOME/.ssh/deploy_key"
 
-          echo ""
-          echo "Testing SSH port 22..."
-
-          timeout 15 bash -c "</dev/tcp/$SERVER_HOST/22" || {
-            echo "ERROR: Cannot connect to $SERVER_HOST on port 22."
-            exit 1
-          }
-
-          echo "SSH port 22 is reachable."
-
-          echo ""
-          echo "Getting SSH host key..."
-
-          ssh-keyscan \
-            -T 15 \
-            -H "$SERVER_HOST" \
-            >> "$HOME/.ssh/known_hosts"
-
-          chmod 644 "$HOME/.ssh/known_hosts"
-
-          echo ""
-          echo "SSH configuration completed successfully."
+          echo "SSH private key configured."
 
       # 8. Test SSH connection
       - name: Test SSH connection
@@ -118,21 +78,25 @@ jobs:
         run: |
           set -e
 
-          if [ -z "$SERVER_USER" ]; then
-            echo "ERROR: SERVER_USER secret is empty or not configured."
+          if [ -z "$SERVER_HOST" ]; then
+            echo "ERROR: SERVER_HOST is empty."
             exit 1
           fi
 
-          echo "======================================"
-          echo "Testing SSH connection..."
-          echo "======================================"
+          if [ -z "$SERVER_USER" ]; then
+            echo "ERROR: SERVER_USER is empty."
+            exit 1
+          fi
+
+          echo "Testing SSH connection to $SERVER_HOST..."
 
           ssh \
             -F /dev/null \
             -i "$HOME/.ssh/deploy_key" \
             -o IdentitiesOnly=yes \
             -o IdentityAgent=none \
-            -o StrictHostKeyChecking=yes \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
             -o ServerAliveInterval=30 \
@@ -146,22 +110,15 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          set -e
-
-          echo "======================================"
-          echo "Checking remote deployment directory..."
-          echo "======================================"
-
           ssh \
             -F /dev/null \
             -i "$HOME/.ssh/deploy_key" \
             -o IdentitiesOnly=yes \
             -o IdentityAgent=none \
-            -o StrictHostKeyChecking=yes \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=10 \
             "$SERVER_USER@$SERVER_HOST" \
             "mkdir -p /home/subofficeuser/public_html/demo && ls -ld /home/subofficeuser/public_html/demo"
 
@@ -174,7 +131,7 @@ jobs:
           set -e
 
           echo "======================================"
-          echo "Deploying React build to demo server..."
+          echo "Deploying React build..."
           echo "======================================"
 
           rsync \
@@ -182,14 +139,11 @@ jobs:
             --info=progress2 \
             --partial \
             --timeout=600 \
-            -e "ssh -F /dev/null -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes" \
+            -e "ssh -F /dev/null -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes" \
             dist/ \
             "$SERVER_USER@$SERVER_HOST:/home/subofficeuser/public_html/demo/"
 
-          echo ""
-          echo "======================================"
           echo "Rsync deployment completed."
-          echo "======================================"
 
       # 11. Verify deployment
       - name: Verify deployment
@@ -197,29 +151,21 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          set -e
-
-          echo "======================================"
-          echo "Checking deployed files..."
-          echo "======================================"
-
           ssh \
             -F /dev/null \
             -i "$HOME/.ssh/deploy_key" \
             -o IdentitiesOnly=yes \
             -o IdentityAgent=none \
-            -o StrictHostKeyChecking=yes \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=10 \
             "$SERVER_USER@$SERVER_HOST" \
-            "echo 'Remote files:' && ls -lah /home/subofficeuser/public_html/demo/ && echo 'Remote size:' && du -sh /home/subofficeuser/public_html/demo/"
+            "echo 'Deployed files:' && ls -lah /home/subofficeuser/public_html/demo/"
 
       # 12. Deployment completed
       - name: Deployment completed
         run: |
-          echo ""
           echo "======================================"
           echo "React demo deployment completed!"
           echo "======================================"
