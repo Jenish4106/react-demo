@@ -1,4 +1,4 @@
-name: Test Small File Upload
+name: Deploy React Demo
 
 on:
   push:
@@ -6,24 +6,62 @@ on:
       - main
 
 jobs:
-  test-upload:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
 
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Install SSH client
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Build React application
+      - name: Build React application
+        run: npm run build
+
+      # 5. Verify build output
+      - name: Verify build output
+        run: |
+          echo "Build output:"
+          ls -lah dist/
+
+          echo "Build size:"
+          du -sh dist/
+
+      # 6. Install SSH and rsync
+      - name: Install SSH and rsync
         run: |
           sudo apt-get update
-          sudo apt-get install -y openssh-client
+          sudo apt-get install -y openssh-client rsync
 
+          echo "SSH version:"
+          ssh -V
+
+          echo "Rsync version:"
+          rsync --version | head -n 1
+
+      # 7. Configure SSH
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
           set -e
+
+          if [ -z "$SSH_PRIVATE_KEY" ]; then
+            echo "ERROR: SERVER_SSH_KEY is empty."
+            exit 1
+          fi
 
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
@@ -31,8 +69,9 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
           chmod 600 "$HOME/.ssh/deploy_key"
 
-          echo "SSH key configured."
+          echo "SSH private key configured."
 
+      # 8. Test SSH connection
       - name: Test SSH connection
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
@@ -49,25 +88,20 @@ jobs:
             -o UserKnownHostsFile=/dev/null \
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
             "$SERVER_USER@$SERVER_HOST" \
             "echo 'SSH connection successful'"
 
-      - name: Test small file upload
+      # 9. Check remote demo directory
+      - name: Check remote demo directory
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
           set -e
 
-          echo "======================================"
-          echo "Testing small file upload..."
-          echo "======================================"
-
-          echo "GitHub Actions test file" > test-upload.txt
-
-          echo "Uploading test-upload.txt..."
-
-          scp \
+          ssh \
             -F /dev/null \
             -i "$HOME/.ssh/deploy_key" \
             -o IdentitiesOnly=yes \
@@ -76,11 +110,57 @@ jobs:
             -o UserKnownHostsFile=/dev/null \
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=10 \
-            test-upload.txt \
+            "$SERVER_USER@$SERVER_HOST" \
+            "mkdir -p /home/subofficeuser/public_html/demo && ls -ld /home/subofficeuser/public_html/demo"
+
+      # 10. Deploy React build using rsync
+      - name: Deploy React build
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          set -e
+
+          echo "======================================"
+          echo "Deploying React build..."
+          echo "======================================"
+
+          rsync \
+            -av \
+            --info=progress2 \
+            --partial \
+            --timeout=600 \
+            -e "ssh -F /dev/null -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes" \
+            dist/ \
             "$SERVER_USER@$SERVER_HOST:/home/subofficeuser/public_html/demo/"
 
           echo "======================================"
-          echo "Small file upload successful!"
+          echo "Rsync deployment completed."
+          echo "======================================"
+
+      # 11. Verify deployment
+      - name: Verify deployment
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          set -e
+
+          ssh \
+            -F /dev/null \
+            -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o IdentityAgent=none \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            "$SERVER_USER@$SERVER_HOST" \
+            "echo 'Deployed files:' && ls -lah /home/subofficeuser/public_html/demo/"
+
+      # 12. Deployment completed
+      - name: Deployment completed
+        run: |
+          echo "======================================"
+          echo "React demo deployment completed!"
           echo "======================================"
