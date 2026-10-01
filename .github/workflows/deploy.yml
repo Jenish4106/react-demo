@@ -1,4 +1,4 @@
-name: Deploy App
+name: Deploy React Demo
 
 on:
   push:
@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # 1. Checkout latest code
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -32,10 +33,10 @@ jobs:
       # 5. Verify build output
       - name: Verify build output
         run: |
-          echo "Checking build output..."
+          echo "Checking React build output..."
           ls -la dist/
 
-      # 6. Install SSH and rsync on GitHub runner
+      # 6. Install SSH and rsync
       - name: Install SSH and rsync
         run: |
           sudo apt-get update
@@ -47,14 +48,49 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
+          set -e
+
+          echo "Checking SERVER_HOST..."
+
+          if [ -z "$SERVER_HOST" ]; then
+            echo "ERROR: SERVER_HOST secret is empty or not configured."
+            exit 1
+          fi
+
+          echo "SERVER_HOST is configured."
+
+          if [ -z "$SSH_PRIVATE_KEY" ]; then
+            echo "ERROR: SERVER_SSH_KEY secret is empty or not configured."
+            exit 1
+          fi
+
+          echo "SERVER_SSH_KEY is configured."
+
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
 
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
           chmod 600 "$HOME/.ssh/deploy_key"
 
-          ssh-keyscan -H "$SERVER_HOST" >> "$HOME/.ssh/known_hosts"
+          echo "Testing SSH port 22..."
+
+          timeout 10 bash -c "</dev/tcp/$SERVER_HOST/22" || {
+            echo "ERROR: Cannot connect to $SERVER_HOST on port 22."
+            exit 1
+          }
+
+          echo "SSH port 22 is reachable."
+
+          echo "Getting SSH host key..."
+
+          ssh-keyscan \
+            -T 10 \
+            -H "$SERVER_HOST" \
+            >> "$HOME/.ssh/known_hosts"
+
           chmod 644 "$HOME/.ssh/known_hosts"
+
+          echo "SSH configuration completed successfully."
 
       # 8. Test SSH connection
       - name: Test SSH connection
@@ -62,6 +98,13 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
+          if [ -z "$SERVER_USER" ]; then
+            echo "ERROR: SERVER_USER secret is empty or not configured."
+            exit 1
+          fi
+
+          echo "Testing SSH connection..."
+
           ssh \
             -F /dev/null \
             -i "$HOME/.ssh/deploy_key" \
@@ -75,31 +118,56 @@ jobs:
             "$SERVER_USER@$SERVER_HOST" \
             "echo 'SSH connection successful'"
 
-      # 9. Deploy React build
+      # 9. Check remote deployment directory
+      - name: Check remote deployment directory
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          ssh \
+            -F /dev/null \
+            -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o IdentityAgent=none \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "$SERVER_USER@$SERVER_HOST" \
+            "mkdir -p /home/subofficeuser/public_html/demo && ls -ld /home/subofficeuser/public_html/demo"
+
+      # 10. Deploy React build
       - name: Deploy React build
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          echo "Deploying React build to production server..."
+          echo "Deploying React build to demo server..."
 
           rsync -avz \
-            --exclude='api/' \
-            --exclude='app/' \
-            --exclude='staging/' \
-            --exclude='staging-api/' \
-            --exclude='staging-app/' \
-            --exclude='.well-known/' \
-            --exclude='.htaccess' \
-            --exclude='_redirects' \
-            --exclude='nginx.conf' \
             -e "ssh -F /dev/null -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
             dist/ \
-            "$SERVER_USER@$SERVER_HOST:/home/subofficeuser/public_html/"
+            "$SERVER_USER@$SERVER_HOST:/home/subofficeuser/public_html/demo/"
 
-      # 10. Deployment completed
+      # 11. Verify deployment
+      - name: Verify deployment
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          echo "Checking deployed files..."
+
+          ssh \
+            -F /dev/null \
+            -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o IdentityAgent=none \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "$SERVER_USER@$SERVER_HOST" \
+            "ls -la /home/subofficeuser/public_html/demo/"
+
+      # 12. Deployment completed
       - name: Deployment completed
         run: |
           echo "======================================"
-          echo "React deployment completed successfully"
+          echo "React demo deployment completed!"
           echo "======================================"
