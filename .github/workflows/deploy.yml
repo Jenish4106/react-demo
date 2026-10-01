@@ -33,10 +33,16 @@ jobs:
       # 5. Verify build output
       - name: Verify build output
         run: |
+          echo "======================================"
           echo "Build output:"
+          echo "======================================"
+
           ls -lah dist/
 
+          echo "======================================"
           echo "Build size:"
+          echo "======================================"
+
           du -sh dist/
 
       # 6. Install SSH and rsync
@@ -78,6 +84,8 @@ jobs:
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
           set -e
+
+          echo "Testing SSH connection..."
 
           ssh \
             -F /dev/null \
@@ -146,6 +154,10 @@ jobs:
         run: |
           set -e
 
+          echo "======================================"
+          echo "Verifying deployment..."
+          echo "======================================"
+
           ssh \
             -F /dev/null \
             -i "$HOME/.ssh/deploy_key" \
@@ -164,3 +176,5 @@ jobs:
           echo "======================================"
           echo "React demo deployment completed!"
           echo "======================================"
+          echo "Deployment target:"
+          echo "/home/subofficeuser/public_html/demo/"
